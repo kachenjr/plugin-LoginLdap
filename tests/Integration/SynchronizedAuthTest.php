@@ -7,10 +7,9 @@
  */
 namespace Piwik\Plugins\LoginLdap\tests\Integration;
 
-use Piwik\Common;
 use Piwik\Config;
-use Piwik\Db;
 use Piwik\Plugins\LoginLdap\Auth\SynchronizedAuth;
+use Piwik\Plugins\LoginLdap\LdapInterop\UserMapper;
 use Piwik\Plugins\UsersManager\API as UsersManagerAPI;
 
 /**
@@ -146,11 +145,14 @@ class SynchronizedAuthTest extends LdapIntegrationTest
 
     private function addPreSynchronizedUser($pass = self::TEST_PASS)
     {
-        $md5Pass = md5($pass);
-        $tokenAuth = UsersManagerAPI::getInstance()->getTokenAuth(self::TEST_LOGIN, $md5Pass);
+        UsersManagerAPI::getInstance()->addUser(
+            self::TEST_LOGIN,
+            $pass,
+            'billionairephilanthropistplayboy@starkindustries.com',
+            'Tony Stark'
+        );
 
-        Db::query("INSERT INTO ".Common::prefixTable('user')." (login, password, alias, email, token_auth) VALUES (?, ?, ?, ?, ?)",
-            array(self::TEST_LOGIN, $md5Pass, 'Tony Stark', 'billionairephilanthropistplayboy@starkindustries.com', $tokenAuth));
+        UserMapper::markUserAsLdapUser(self::TEST_LOGIN);
     }
 
     private function addLdapUserWithWrongPassword()
