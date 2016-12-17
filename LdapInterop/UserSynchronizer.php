@@ -140,7 +140,20 @@ class UserSynchronizer
                 }
             }
 
-            return $usersManagerApi->getUser($user['login']);
+            /*
+             * This no longer returns the auth_token with the user because of a new enrichUser function that is called that
+             * specifically strips that out in an effort to make things more secure by not passing around info that isn't needed.
+             */
+            //return $usersManagerApi->getUser($user['login']);
+
+            /*
+             * work around for now is to call UserModel directly and get the token that way.  This plugin has authenticated the user
+             * by this point, so this shouldn't be a security issue.  The UserModelAPI assumes all password based authentication,
+             * it would be good to add an API that allows for Authentication plugins to bypass that and get the token via the API.
+             * The token is needed in the Base->makeSuccessLogin method, where the user's auth token is set in context and then the standard
+             * token_auth method is used to get the user into piwik.
+             */
+            return $userModel->getUser($piwikLogin);
         });
     }
 

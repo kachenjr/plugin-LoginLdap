@@ -324,9 +324,18 @@ abstract class Base implements Auth
     protected function makeSuccessLogin($userInfo)
     {
         $successCode = $userInfo['superuser_access'] ? AuthResult::SUCCESS_SUPERUSER_AUTH_CODE : AuthResult::SUCCESS;
-        $tokenAuth = $this->usersManagerAPI->getTokenAuth($userInfo['login'], $this->getTokenAuthSecret());
+        /*
+         * This no longer works because we do not get the exact md5 hashed value that this plugin stored when the user was created.
+         * It is now hashed with another salted password function as well.  Since hte original ldap password that was stored
+         * was based on uuid(), we cannot use rthis API which assumes you're sending in the password for the user to then get
+         * access to the token.  The synchronizeLdapUser method has been modified to return the auth_token so that the rest
+         * of the logic can properly fall back to the auth_token method per design
+         */
+        //Remove these comments once this this is all verified to work properly.
+        //$tokenAuth = $this->usersManagerAPI->getTokenAuth($userInfo['login'], $this->getTokenAuthSecret());
+        //return new AuthResult($successCode, $userInfo['login'], $tokenAuth);
 
-        return new AuthResult($successCode, $userInfo['login'], $tokenAuth);
+        return new AuthResult($successCode, $userInfo['login'], $userInfo['token_auth']);
     }
 
     protected function makeAuthFailure()

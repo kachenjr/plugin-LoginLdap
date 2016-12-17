@@ -442,7 +442,17 @@ class UserMapper
             throw new Exception("Unexpected error: no password for user, cannot check if LDAP synchronized.");
         }
 
-        return substr($user['password'], 0, strlen(self::MAPPED_USER_PASSWORD_PREFIX)) == self::MAPPED_USER_PASSWORD_PREFIX;
+        /*
+         * This no longer works because we do not get the same value back from the database for the user's password
+         * that this plugin stored.  It has been hashed again by the UserManager in core.
+         * For now, making this method return true, as it should only get called if a user was successfully authenticated
+         * via ldap.  Need to research use cases where we would not want just skip this and sync the user upon successful
+         * login via ldap.
+         */
+        //with this, you get WARNING LoginLdap Unable to synchronize LDAP user 'tesla', non-LDAP user with same name exists.
+        //return substr($user['password'], 0, strlen(self::MAPPED_USER_PASSWORD_PREFIX)) == self::MAPPED_USER_PASSWORD_PREFIX;
+
+        return true;
     }
 
     /**
