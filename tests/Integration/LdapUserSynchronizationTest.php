@@ -9,6 +9,7 @@
 namespace Piwik\Plugins\LoginLdap\tests\Integration;
 
 use Piwik\Access;
+use Piwik\Auth\Password;
 use Piwik\Config;
 use Piwik\Db;
 use Piwik\Common;
@@ -24,8 +25,6 @@ use Piwik\Tests\Framework\Fixture;
  */
 class LdapUserSynchronizationTest extends LdapIntegrationTest
 {
-    const LDAP_ADDED_PASS_DIFF = "{LDAP}..........................";
-
     public function setUp()
     {
         parent::setUp();
@@ -90,12 +89,14 @@ class LdapUserSynchronizationTest extends LdapIntegrationTest
 
         $user = Db::fetchRow("SELECT login, password, alias, email, token_auth FROM " . Common::prefixTable('user') . " WHERE login = ?", array(self::TEST_LOGIN));
         $this->assertNotEmpty($user);
+        $passwordHelper = new Password();
+        $this->assertTrue($passwordHelper->verify(md5(self::TEST_PASS_LDAP), $user['password']));
+        unset($user['password']);
         $this->assertEquals(array(
             'login' => self::TEST_LOGIN,
-            'password' => md5(self::TEST_PASS),
             'alias' => self::TEST_LOGIN,
             'email' => 'billionairephilanthropistplayboy@starkindustries.com',
-            'token_auth' => UsersManagerAPI::getInstance()->getTokenAuth(self::TEST_LOGIN, md5(self::TEST_PASS))
+            'token_auth' => UsersManagerAPI::getInstance()->getTokenAuth(self::TEST_LOGIN, md5(self::TEST_PASS_LDAP))
         ), $user);
 
         $this->assertNoAccessInDb();
@@ -105,7 +106,7 @@ class LdapUserSynchronizationTest extends LdapIntegrationTest
     {
         Access::doAsSuperUser(function () {
             UsersManagerAPI::getInstance()->addUser(
-                LdapUserSynchronizationTest::TEST_LOGIN, LdapUserSynchronizationTest::LDAP_ADDED_PASS_DIFF, 'something@domain.com', $alias = false, $isPasswordHashed = true);
+                LdapUserSynchronizationTest::TEST_LOGIN, md5('anypass'), 'something@domain.com', $alias = false, $isPasswordHashed = true);
         });
 
         $this->authenticateViaLdap();
@@ -138,7 +139,7 @@ class LdapUserSynchronizationTest extends LdapIntegrationTest
 
         Access::doAsSuperUser(function () {
             UsersManagerAPI::getInstance()->addUser(
-                LdapUserSynchronizationTest::TEST_LOGIN, LdapUserSynchronizationTest::LDAP_ADDED_PASS_DIFF, 'something@domain.com', $alias = false, $isPasswordHashed = true);
+                LdapUserSynchronizationTest::TEST_LOGIN, md5('anypass'), 'something@domain.com', $alias = false, $isPasswordHashed = true);
             UsersManagerAPI::getInstance()->setUserAccess(LdapUserSynchronizationTest::TEST_LOGIN, 'view', array(4,5));
             UsersManagerAPI::getInstance()->setUserAccess(LdapUserSynchronizationTest::TEST_LOGIN, 'admin', array(6));
         });
@@ -205,15 +206,11 @@ class LdapUserSynchronizationTest extends LdapIntegrationTest
         $this->assertEquals(array('thor'), $superusers);
     }
 
-    public function test_RandomPasswordGenerated_WhenGenerateRandomTokenAuthUsed()
+    public function test_RandomPasswordGenerated()
     {
-        Config::getInstance()->LoginLdap['enable_random_token_auth_generation'] = 1;
-
         $this->authenticateViaLdap();
 
         $user = $this->getUser(self::TEST_LOGIN);
-
-        $this->assertNotEquals(self::LDAP_ADDED_PASS, $user['password']);
 
         // test that password doesn't change after re-synchronizing
         $this->authenticateViaLdap();

@@ -245,8 +245,6 @@ class UserMapperTest extends PHPUnit_Framework_TestCase
 
     public function test_createPiwikUserEntryForLdapUser_CreatesCorrectLookingPassword_WhenGenerateRandomTokenAuthIsUsed()
     {
-        $this->userMapper->setIsRandomTokenAuthGenerationEnabled(true);
-
         $result = $this->userMapper->createPiwikUserFromLdapUser(array(
             'uid' => 'sarah',
             'cn' => 'Sarah Jane',
@@ -262,8 +260,6 @@ class UserMapperTest extends PHPUnit_Framework_TestCase
 
     public function test_createPiwikUserEntryForLdapUser_UsesExistingPassword_WhenGenerateRandomTokenAuthIsUsed()
     {
-        $this->userMapper->setIsRandomTokenAuthGenerationEnabled(true);
-
         $existingUser = array(
             'login' => 'broken',
             'alias' => 'alias',
@@ -286,16 +282,19 @@ class UserMapperTest extends PHPUnit_Framework_TestCase
         ), $result);
     }
 
-    public function test_isUserLdapUser_ReportsUserAsLdapUser_IfUserInfoHasSpecialPassword()
+    public function test_isUserLdapUser_ReportsUserAsLdapUser()
     {
-        $isLdapUser = UserMapper::isUserLdapUser(array('password' => "{LDAP}..."));
-        $this->assertTrue($isLdapUser);
-    }
+        $result = $this->userMapper->createPiwikUserFromLdapUser(array(
+            'uid' => 'sarah',
+            'cn' => 'Sarah Jane',
+            'sn' => 'Jane',
+            'givenname' => 'Sarah',
+            'mail' => 'sarahjane@guardian.co.uk',
+            'userpassword' => 'pass'
+        ));
 
-    public function test_isUserLdapUser_ReportsUserAsLdapUser_IfUserInfoHasNormalPasswordHash()
-    {
-        $isLdapUser = UserMapper::isUserLdapUser(array('password' => "..."));
-        $this->assertFalse($isLdapUser);
+        $isLdapUser = UserMapper::isUserLdapUser($result['login']);
+        $this->assertTrue($isLdapUser);
     }
 
     private function assertUserMapperIsCorrectlyConfigured(UserMapper $userMapper)

@@ -160,13 +160,15 @@ abstract class Base implements Auth
      */
     public function getTokenAuthSecret()
     {
-        $user = $this->getUserForLogin();
-
-        if (empty($user)) {
-            throw new Exception("Cannot find user '{$this->login}', if the user is in LDAP, he/she has not been synchronized with Piwik.");
+        if (!empty($this->passwordHash)) {
+            return $this->passwordHash;
         }
 
-        return $user['password'];
+        if (!empty($this->password)) {
+            return md5($this->password);
+        }
+
+        throw new Exception('token auth cannot be calculated');
     }
 
     /**
