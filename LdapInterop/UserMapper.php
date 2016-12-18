@@ -8,6 +8,9 @@
 namespace Piwik\Plugins\LoginLdap\LdapInterop;
 
 use Exception;
+use Piwik\Access;
+use Piwik\API\Proxy;
+use Piwik\API\Request;
 use Piwik\Container\StaticContainer;
 use Piwik\Plugins\LoginLdap\Config;
 use Psr\Log\LoggerInterface;
@@ -20,14 +23,9 @@ use Psr\Log\LoggerInterface;
  */
 class UserMapper
 {
-    /**
-     * The prefix for the 'password' field of a Piwik user that was converted to an LDAP
-     * user. This prefix serves two functions: it identifies a user as an LDAP user and
-     * hides the hashing algorithm used in LDAP.
-     */
-    const MAPPED_USER_PASSWORD_PREFIX = "{LDAP}";
-
     const DEFAULT_USER_EMAIL_SUFFIX = '@mydomain.com';
+
+    const USER_PREFERENCE_NAME_IS_LDAP_USER = 'isLDAPUser';
 
     /**
      * The LDAP resource field that holds a user's username.
@@ -78,14 +76,6 @@ class UserMapper
      * @var string
      */
     private $userEmailSuffix = self::DEFAULT_USER_EMAIL_SUFFIX;
-
-    /**
-     * If true, the password in Piwik DB's is set to a randomly generated string.
-     * This results in a token auth that is not related to a user's password in LDAP.
-     *
-     * @var bool
-     */
-    private $isRandomTokenAuthGenerationEnabled = false;
 
     /**
      * If true, the user email suffix is appended to the Piwik user's login. This means
@@ -152,30 +142,28 @@ class UserMapper
     }
 
     /**
-     * The password we store for a mapped user isn't used to authenticate, it's just
-     * data used to generate a user's token auth.
+     * The password we store for a mapped user is
+     *   random if Always Use LDAP is enabled or WebServerAuth is set
+     *   the current login password for the user if Always Use LDAP is disabled
+     *
+     * There is no reason to store the ldapUserPasswordField since it will no longer have the same
+     * effect on the auth_token.  They were linked before and a change in one would change the other.  With
+     * the new password hashing changes, the auth_token is now based on the userid plus random and salt values.
+     *
+     * This method now returns either the password in $user if it is set, meaning it was either already randomly generated
+     * or updated by the SynchronizedAuth flow to the user's current password ( even if it just changed ), or it will generate
+     * a new random password.  It would be nice if there was a way to have the core UserModel allow an empty password now
+     * for plugin Auth models so that we don't even have to bother with this.
      */
     private function getPiwikPasswordForLdapUser($ldapUser, $user)
     {
-        $ldapPassword = $this->getLdapUserField($ldapUser, $this->ldapUserPasswordField);
-        if ($this->isRandomTokenAuthGenerationEnabled
-            || empty($ldapPassword)
-        ) {
-            if (!empty($user['password'])) { // do not generate new passwords for users that are already synchronized
-                return $user['password'];
-            } else {
-                if (!$this->isRandomTokenAuthGenerationEnabled) {
-                    $this->logger->warning("UserMapper::{func}: Could not find LDAP password for user '{user}', generating random one.", array(
-                        'func' => __FUNCTION__,
-                        'user' => @$ldapUser[$this->ldapUserIdField]
-                    ));
-                }
 
-                return $this->generateRandomPassword();
-            }
+        if (!empty($user['password'])) { // do not generate new passwords for users that are already synchronized
+            return $user['password'];
         } else {
-            return $this->processPassword($ldapPassword);
+            return $this->generateRandomPassword();
         }
+
     }
 
     /**
@@ -185,16 +173,7 @@ class UserMapper
      */
     public function generateRandomPassword()
     {
-        return $this->processPassword(uniqid());
-    }
-
-    private function processPassword($password)
-    {
-        $password = $this->hashLdapPassword($password);
-        $password = self::MAPPED_USER_PASSWORD_PREFIX . $password;
-        $password = substr($password, 0, 32);
-        $password = str_pad($password, 32, '-');
-        return $password;
+        return $this->hashLdapPassword(uniqid());
     }
 
     private function getEmailAddressForLdapUser($ldapUser, $login)
@@ -380,26 +359,6 @@ class UserMapper
     }
 
     /**
-     * Gets the {@link $isRandomTokenAuthGenerationEnabled} property.
-     *
-     * @return boolean
-     */
-    public function isRandomTokenAuthGenerationEnabled()
-    {
-        return $this->isRandomTokenAuthGenerationEnabled;
-    }
-
-    /**
-     * Sets the {@link $isRandomTokenAuthGenerationEnabled} property.
-     *
-     * @param boolean $isRandomTokenAuthGenerationEnabled
-     */
-    public function setIsRandomTokenAuthGenerationEnabled($isRandomTokenAuthGenerationEnabled)
-    {
-        $this->isRandomTokenAuthGenerationEnabled = $isRandomTokenAuthGenerationEnabled;
-    }
-
-    /**
      * Returns the {@link $appendUserEmailSuffixToUsername} property.
      *
      * @return bool
@@ -432,28 +391,43 @@ class UserMapper
      * Returns true if the user information is for a Piwik user that was mapped from LDAP,
      * false if otherwise.
      *
-     * @param string[] $user The user information (must have at least a 'password' field).
+     * @param string $userLogin The user login
      * @return bool
-     * @throws Exception if the 'password' field is missing from $user.
      */
-    public static function isUserLdapUser($user)
+    public static function isUserLdapUser($userLogin)
     {
-        if (empty($user['password'])) { // sanity check
-            throw new Exception("Unexpected error: no password for user, cannot check if LDAP synchronized.");
-        }
+        return Access::doAsSuperUser(function () use ($userLogin) {
+            $class      = Request::getClassNameAPI('UsersManager');
+            $parameters = array(
+                'userLogin'      => $userLogin,
+                'preferenceName' => self::USER_PREFERENCE_NAME_IS_LDAP_USER
 
-        /*
-         * This no longer works because we do not get the same value back from the database for the user's password
-         * that this plugin stored.  It has been hashed again by the UserManager in core.
-         * For now, making this method return true, as it should only get called if a user was successfully authenticated
-         * via ldap.  Need to research use cases where we would not want just skip this and sync the user upon successful
-         * login via ldap.
-         */
-        //with this, you get WARNING LoginLdap Unable to synchronize LDAP user 'tesla', non-LDAP user with same name exists.
-        //return substr($user['password'], 0, strlen(self::MAPPED_USER_PASSWORD_PREFIX)) == self::MAPPED_USER_PASSWORD_PREFIX;
-
-        return true;
+            );
+            $preference = Proxy::getInstance()->call($class, 'getUserPreference', $parameters);
+            return !!$preference;
+        });
     }
+
+    /**
+     * Marks a user a synchronized LDAP user
+     *
+     * @param string $userLogin The user login
+     */
+    public static function markUserAsLdapUser($userLogin)
+    {
+        Access::doAsSuperUser(function () use ($userLogin) {
+            $class     = Request::getClassNameAPI('UsersManager');
+            $parameters = array(
+                'userLogin'       => $userLogin,
+                'preferenceName'  => self::USER_PREFERENCE_NAME_IS_LDAP_USER,
+                'preferenceValue' => 1
+
+            );
+            Proxy::getInstance()->call($class, 'setUserPreference', $parameters);
+        });
+    }
+
+
 
     /**
      * Creates a UserMapper instance configured using INI options.
@@ -497,11 +471,6 @@ class UserMapper
         $userEmailSuffix = Config::getLdapUserEmailSuffix();
         if (!empty($userEmailSuffix)) {
             $result->setUserEmailSuffix($userEmailSuffix);
-        }
-
-        $isRandomTokenAuthGenerationEnabled = Config::isRandomTokenAuthGenerationEnabled();
-        if (!empty($isRandomTokenAuthGenerationEnabled)) {
-            $result->setIsRandomTokenAuthGenerationEnabled($isRandomTokenAuthGenerationEnabled);
         }
 
         $appendUserEmailSuffixToUsername = Config::shouldAppendUserEmailSuffixToUsername();

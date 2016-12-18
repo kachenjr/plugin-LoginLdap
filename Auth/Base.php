@@ -160,13 +160,15 @@ abstract class Base implements Auth
      */
     public function getTokenAuthSecret()
     {
-        $user = $this->getUserForLogin();
-
-        if (empty($user)) {
-            throw new Exception("Cannot find user '{$this->login}', if the user is in LDAP, he/she has not been synchronized with Piwik.");
+        if (!empty($this->passwordHash)) {
+            return $this->passwordHash;
         }
 
-        return $user['password'];
+        if (!empty($this->password)) {
+            return md5($this->password);
+        }
+
+        throw new Exception('token auth cannot be calculated');
     }
 
     /**
@@ -259,7 +261,7 @@ abstract class Base implements Auth
         $this->usersManagerAPI = $usersManagerAPI;
     }
 
-    protected function getUserForLogin()
+    protected function getUserForLogin($force_update = false)
     {
         if (empty($this->userForLogin)) {
             if (!empty($this->login)) {
@@ -324,18 +326,15 @@ abstract class Base implements Auth
     protected function makeSuccessLogin($userInfo)
     {
         $successCode = $userInfo['superuser_access'] ? AuthResult::SUCCESS_SUPERUSER_AUTH_CODE : AuthResult::SUCCESS;
-        /*
-         * This no longer works because we do not get the exact md5 hashed value that this plugin stored when the user was created.
-         * It is now hashed with another salted password function as well.  Since hte original ldap password that was stored
-         * was based on uuid(), we cannot use rthis API which assumes you're sending in the password for the user to then get
-         * access to the token.  The synchronizeLdapUser method has been modified to return the auth_token so that the rest
-         * of the logic can properly fall back to the auth_token method per design
-         */
-        //Remove these comments once this this is all verified to work properly.
-        //$tokenAuth = $this->usersManagerAPI->getTokenAuth($userInfo['login'], $this->getTokenAuthSecret());
-        //return new AuthResult($successCode, $userInfo['login'], $tokenAuth);
 
-        return new AuthResult($successCode, $userInfo['login'], $userInfo['token_auth']);
+        //If we already have the auth token, then don't try to retrieve it again with the password
+        if (isset($userInfo['token_auth'])){
+            return new AuthResult($successCode, $userInfo['login'], $userInfo['token_auth']);
+        }
+
+        $tokenAuth = $this->usersManagerAPI->getTokenAuth($userInfo['login'], $this->getTokenAuthSecret());
+
+        return new AuthResult($successCode, $userInfo['login'], $tokenAuth);
     }
 
     protected function makeAuthFailure()

@@ -8,6 +8,8 @@
 namespace Piwik\Plugins\LoginLdap\LdapInterop;
 
 use Piwik\Access;
+use Piwik\API\Proxy;
+use Piwik\API\Request;
 use Piwik\Container\StaticContainer;
 use Piwik\Plugins\LoginLdap\Config;
 use Piwik\Plugins\UsersManager\API as UsersManagerAPI;
@@ -133,27 +135,19 @@ class UserSynchronizer
                     $usersManagerApi->setUserAccess($user['login'], 'view', $newUserDefaultSitesWithViewAccess);
                 }
             } else {
-                if (!UserMapper::isUserLdapUser($existingUser)) {
+                if (!UserMapper::isUserLdapUser($existingUser['login'])) {
                     $logger->warning("Unable to synchronize LDAP user '{user}', non-LDAP user with same name exists.", array('user' => $existingUser['login']));
                 } else {
                     $usersManagerApi->updateUser($user['login'], $user['password'], $user['email'], $user['alias'], $isPasswordHashed = true);
                 }
             }
 
-            /*
-             * This no longer returns the auth_token with the user because of a new enrichUser function that is called that
-             * specifically strips that out in an effort to make things more secure by not passing around info that isn't needed.
-             */
-            //return $usersManagerApi->getUser($user['login']);
+            UserMapper::markUserAsLdapUser($user['login']);
 
-            /*
-             * work around for now is to call UserModel directly and get the token that way.  This plugin has authenticated the user
-             * by this point, so this shouldn't be a security issue.  The UserModelAPI assumes all password based authentication,
-             * it would be good to add an API that allows for Authentication plugins to bypass that and get the token via the API.
-             * The token is needed in the Base->makeSuccessLogin method, where the user's auth token is set in context and then the standard
-             * token_auth method is used to get the user into piwik.
-             */
-            return $userModel->getUser($piwikLogin);
+            $this->logger->debug("FINDME syncLdapUser returning " . print_r($userModel->getUser($user['login']), true));
+            return $userModel->getUser($user['login']);
+
+            //return $usersManagerApi->getUser($user['login']);
         });
     }
 
