@@ -261,9 +261,12 @@ abstract class Base implements Auth
         $this->usersManagerAPI = $usersManagerAPI;
     }
 
-    protected function getUserForLogin()
+    protected function getUserForLogin($force_update = false)
     {
-        if (empty($this->userForLogin)) {
+        /*
+         * mental note.. userForLogin is populated already.. so this will NOT go get a good one..
+         */
+        if (empty($this->userForLogin) || $force_update) {
             if (!empty($this->login)) {
                 $this->userForLogin = $this->usersModel->getUser($this->login);
             } else if (!empty($this->token_auth)) {
@@ -326,6 +329,12 @@ abstract class Base implements Auth
     protected function makeSuccessLogin($userInfo)
     {
         $successCode = $userInfo['superuser_access'] ? AuthResult::SUCCESS_SUPERUSER_AUTH_CODE : AuthResult::SUCCESS;
+
+        //If we already have the auth token, then don't try to retrieve it again with the password
+        if (isset($userInfo['token_auth'])){
+            return new AuthResult($successCode, $userInfo['login'], $userInfo['token_auth']);
+        }
+
         $tokenAuth = $this->usersManagerAPI->getTokenAuth($userInfo['login'], $this->getTokenAuthSecret());
 
         return new AuthResult($successCode, $userInfo['login'], $tokenAuth);

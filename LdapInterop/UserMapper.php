@@ -142,27 +142,28 @@ class UserMapper
     }
 
     /**
-     * The password we store for a mapped user isn't used to authenticate, it's just
-     * data used to generate a user's token auth.
+     * The password we store for a mapped user is
+     *   random if Always Use LDAP is enabled or WebServerAuth is set
+     *   the current login password for the user if Always Use LDAP is disabled
+     *
+     * There is no reason to store the ldapUserPasswordField since it will no longer have the same
+     * effect on the auth_token.  They were linked before and a change in one would change the other.  With
+     * the new password hashing changes, the auth_token is now based on the userid plus random and salt values.
+     *
+     * This method now returns either the password in $user if it is set, meaning it was either already randomly generated
+     * or updated by the SynchronizedAuth flow to the user's current password ( even if it just changed ), or it will generate
+     * a new random password.  It would be nice if there was a way to have the core UserModel allow an empty password now
+     * for plugin Auth models so that we don't even have to bother with this.
      */
     private function getPiwikPasswordForLdapUser($ldapUser, $user)
     {
-        $ldapPassword = $this->getLdapUserField($ldapUser, $this->ldapUserPasswordField);
-        if (empty($ldapPassword)
-        ) {
-            if (!empty($user['password'])) { // do not generate new passwords for users that are already synchronized
-                return $user['password'];
-            } else {
-                $this->logger->warning("UserMapper::{func}: Could not find LDAP password for user '{user}', generating random one.", array(
-                    'func' => __FUNCTION__,
-                    'user' => @$ldapUser[$this->ldapUserIdField]
-                ));
 
-                return $this->generateRandomPassword();
-            }
+        if (!empty($user['password'])) { // do not generate new passwords for users that are already synchronized
+            return $user['password'];
         } else {
-            return $this->hashLdapPassword($ldapPassword);
+            return $this->generateRandomPassword();
         }
+
     }
 
     /**

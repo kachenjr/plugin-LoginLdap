@@ -144,7 +144,10 @@ class UserSynchronizer
 
             UserMapper::markUserAsLdapUser($user['login']);
 
-            return $usersManagerApi->getUser($user['login']);
+            $this->logger->debug("FINDME syncLdapUser returning " . print_r($userModel->getUser($user['login']), true));
+            return $userModel->getUser($user['login']);
+
+            //return $usersManagerApi->getUser($user['login']);
         });
     }
 
